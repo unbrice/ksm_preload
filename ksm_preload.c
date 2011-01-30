@@ -16,7 +16,8 @@
  *
  */
 
-/* Usage: make
+/* Enables KSM on heap-allocated memory.
+ * Usage: make
  *        LD_PRELOAD+=./ksm-preload.so command args ...
  * REQUIRES MALLOC TO BE THREAD SAFE !
  */
