@@ -19,7 +19,6 @@
 /* Enables KSM on heap-allocated memory.
  * Usage: make
  *        LD_PRELOAD+=./ksm-preload.so command args ...
- * REQUIRES MALLOC TO BE THREAD SAFE !
  */
 
 
@@ -75,7 +74,8 @@ kernel_mmap (void *start, size_t length, int prot, int flags,
 	     int fd, off_t offset)
 {
 #ifdef __i386__
-  int32_t args[6] = { (int32_t) start, (int32_t) length, prot, flags, fd, offset };
+  int32_t args[6] =
+    { (int32_t) start, (int32_t) length, prot, flags, fd, offset };
   return (void *) syscall (SYS_mmap, args);
 #else
   return (void *) syscall (SYS_mmap, start, length, prot, flags, fd, offset);
@@ -95,8 +95,8 @@ kernel_mmap2 (void *start, size_t length, int prot, int flags,
   /* If MMAP2_ENABLED is not defined, we won't export mmap2, so this
    * function should not be called.
    */
-  error(1, 0, "ksm_preload: WTF O_o? mmap2 was called but not"
-	" exported. Please contact unbrice@vleu.net .");
+  error (1, 0, "ksm_preload: WTF O_o? mmap2 was called but not"
+	 " exported. Please contact unbrice@vleu.net .");
   return NULL;
 #endif
 }
@@ -129,8 +129,9 @@ debug_puts (const char *str)
 {
 #ifdef DEBUG
   fprintf (stderr, "ksm_preload: %s\n", str);
-#endif
+#else
   str = str;			// disables a warning about unused str
+#endif
 }
 
 /* Just like dlsym but error()s in case of failure */
@@ -164,11 +165,12 @@ setup ()
    * Ubuntu 10.10, even when it is available.
    */
   // TODO(unbrice): investigate...
-  if (MMAP2_ENABLED) {
-    mmap2_function *dl_mmap2 = dlsym (RTLD_NEXT, "mmap2");
-    if (NULL != dl_mmap2)
-      next_dl_mmap2 = dl_mmap2;
-  }
+  if (MMAP2_ENABLED)
+    {
+      mmap2_function *dl_mmap2 = dlsym (RTLD_NEXT, "mmap2");
+      if (NULL != dl_mmap2)
+	next_dl_mmap2 = dl_mmap2;
+    }
 
   /* Activates the symbols from the next library */
   next_dl_calloc = dl_calloc;
@@ -188,7 +190,13 @@ setup ()
 static void
 merge_if_profitable (void *address, size_t length, int flags)
 {
-  if (length <= MERGE_THRESHOLD)
+  /* Rounds address to its page */
+  const intptr_t raw_address = (intptr_t) address;
+  const intptr_t page_address = (raw_address / page_size) * page_size;
+  const size_t new_length = length + (size_t) (raw_address - page_address);
+  assert (page_address > raw_address);
+
+  if (new_length <= MERGE_THRESHOLD)
     return;
   /* Checks that required flags are present and that forbidden ones are not */
   else if (flags == -1		// flags are unknown
@@ -196,12 +204,6 @@ merge_if_profitable (void *address, size_t length, int flags)
 	   || ((flags & MAP_PRIVATE) && (flags & MAP_ANONYMOUS)
 	       && !(flags & MAP_GROWSDOWN) && !(flags & MAP_STACK)))
     {
-      /* Rounds address to its page */
-      intptr_t raw_address = (intptr_t) address;
-      intptr_t page_address = (raw_address / page_size) * page_size;
-      size_t new_length = length + (size_t) (raw_address - page_address);
-      assert (page_address > raw_address);
-
       if (-1 == madvise ((void *) page_address, new_length, MADV_MERGEABLE))
 	debug_puts ("madvise() failed");
       else
