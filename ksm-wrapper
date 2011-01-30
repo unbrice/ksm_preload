@@ -1,0 +1,17 @@
+#!/bin/sh
+# By Brice Arnould <unbrice@vleu.net>
+# Copyright (C) 2011 Gandi SAS.
+#
+# Runs the provided executable with ksm-preload.so , which enables KSM
+# on heap-allocated memory.
+
+readonly KSM_PATH=$(cd $(dirname $0) ; pwd)
+readonly KSM_SO="${KSM_PATH}/ksm-preload.so"
+
+if [ ! -x "${KSM_SO}" ]; then
+    echo "Could not find ${KSM_SO}"
+    exit 1
+fi
+
+export LD_PRELOAD="${LD_PRELOAD} ${KSM_SO}"
+exec "$@"
