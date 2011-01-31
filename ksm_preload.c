@@ -33,7 +33,7 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>		// fprintf(), stderr
-#include <stdint.h>		// intptr_t
+#include <stdint.h>		// uintptr_t
 
 
 #define MERGE_THRESHOLD (4086*8)
@@ -118,7 +118,7 @@ realloc_function *next_dl_realloc = __libc_realloc;
 #endif
 
 /* The page size */
-long page_size;
+unsigned long page_size = 1;
 
 
 
@@ -152,7 +152,7 @@ xdlsym (void *handle, const char *symbol)
 static void
 setup ()
 {
-  page_size = sysconf (_SC_PAGESIZE);
+  page_size = (long unsigned) sysconf (_SC_PAGESIZE);
 
   /* Loads the symbols from the next library using the libc functions */
   calloc_function *dl_calloc = xdlsym (RTLD_NEXT, "calloc");
@@ -191,10 +191,10 @@ static void
 merge_if_profitable (void *address, size_t length, int flags)
 {
   /* Rounds address to its page */
-  const intptr_t raw_address = (intptr_t) address;
-  const intptr_t page_address = (raw_address / page_size) * page_size;
+  const uintptr_t raw_address = (uintptr_t) address;
+  const uintptr_t page_address = (raw_address / page_size) * page_size;
   const size_t new_length = length + (size_t) (raw_address - page_address);
-  assert (page_address > raw_address);
+  assert (page_address <= raw_address);
 
   if (new_length <= MERGE_THRESHOLD)
     return;
