@@ -31,10 +31,10 @@
 #include <assert.h>
 #include <error.h>
 #include <errno.h>
+#include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>		// fprintf(), stderr
 #include <stdint.h>		// uintptr_t
-
 
 #define MERGE_THRESHOLD (4086*8)
 
@@ -117,8 +117,10 @@ realloc_function *next_dl_realloc = __libc_realloc;
   tell me about the result.
 #endif
 
-/* The page size */
-unsigned long page_size = 1;
+/* The page size, this value is temporary and will be fixed
+ * by setup()
+ */
+static unsigned long page_size = 4096;
 
 
 
@@ -185,6 +187,58 @@ setup ()
 
 /******** UTILITIES FOR WRAPPERS ********/
 
+static void
+lazily_setup ()
+{
+  /* Allows to be notified when setup has returned */
+  static pthread_cond_t condition = PTHREAD_COND_INITIALIZER;
+  /* Protects the other variables */
+  static pthread_mutex_t condition_mutex =
+    PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP;
+  /* True if setup() has been called and returned */
+  static bool setup_done = false;
+  /* True if setup() was called or is being called */
+  static bool setup_started = false;
+  /* The thread in charge for running setup(), invalid if
+   * setup_started is false
+   */
+  static pthread_t setup_thread;
+
+  /* Quickly returns if the job was already done */
+  __sync_synchronize ();
+  if (setup_done)
+    return;
+
+  // <condition_mutex>
+  pthread_mutex_lock (&condition_mutex);
+  if (!setup_done)		// Might have been called since last check
+    {
+      if (!setup_started)
+	{
+	  /* Setup hasn't been called yet, start it */
+	  setup_thread = pthread_self ();
+	  setup_started = true;
+	  setup ();
+	  setup_done = true;
+	  pthread_cond_broadcast (&condition);
+	}
+      else			/* if (setup_started) */
+	{
+	  if (pthread_self () != setup_thread)
+	    /* Another thread is doing the setup, wait for it */
+	    pthread_cond_wait (&condition, &condition_mutex);
+	  else
+	    /* We are the ones doing the setup ! So we are called from setup,
+	     * because it is allocating memory. Nothing to do.
+	     */
+	    {
+	    }
+	}
+    }
+  // </condition_mutex>
+  pthread_mutex_unlock (&condition_mutex);
+}
+
 /* Issues a madvise(..., MADV_MERGEABLE) if len is big enough and flags are rights.
  */
 static void
@@ -220,6 +274,7 @@ merge_if_profitable (void *address, size_t length, int flags)
 void *
 calloc (size_t nmemb, size_t size)
 {
+  lazily_setup ();
   void *res = next_dl_calloc (nmemb, size);
   merge_if_profitable (res, size, -1);
   return res;
@@ -229,6 +284,7 @@ calloc (size_t nmemb, size_t size)
 void *
 malloc (size_t size)
 {
+  lazily_setup ();
   void *res = next_dl_malloc (size);
   merge_if_profitable (res, size, -1);
   return res;
@@ -238,6 +294,7 @@ malloc (size_t size)
 void *
 mmap (void *addr, size_t length, int prot, int flags, int fd, off_t offset)
 {
+  lazily_setup ();
   void *res = next_dl_mmap (addr, length, prot, flags, fd, offset);
   merge_if_profitable (res, length, flags);
   return res;
@@ -251,6 +308,7 @@ void *
 mmap2 (void *addr, size_t length, int prot, int flags, int fd, off_t pgoffset)
 {
   assert (MMAP2_ENABLED);
+  lazily_setup ();
   void *res = next_dl_mmap2 (addr, length, prot, flags, fd, pgoffset);
   merge_if_profitable (res, length, flags);
   return res;
@@ -261,6 +319,7 @@ void *
 mremap (void *old_address, size_t old_length, size_t new_length, int flags,
 	...)
 {
+  lazily_setup ();
   void *res = next_dl_mremap (old_address, old_length, new_length, flags);
   merge_if_profitable (res, new_length, -1);
   return res;
@@ -270,19 +329,8 @@ mremap (void *old_address, size_t old_length, size_t new_length, int flags,
 void *
 realloc (void *addr, size_t size)
 {
+  lazily_setup ();
   void *res = next_dl_realloc (addr, size);
   merge_if_profitable (res, size, -1);
   return res;
 }
-
-#if __GNUC_PREREQ(4,4) || KSMP_FORCE_CC
-/* Ensures that init() is called when the lib is loaded */
-void __attribute__ ((constructor)) init ()
-{
-  setup ();
-}
-#else
-# error This version of ksm_preload has not been tested with your	\
-  compiler. Please define KSMP_FORCE_CC to 1 (-DKSMP_FORCE_CC=1) and	\
-  tell me about the result.
-#endif
