@@ -247,8 +247,10 @@ merge_if_profitable (void *address, size_t length, int flags)
   /* Rounds address to its page */
   const uintptr_t raw_address = (uintptr_t) address;
   const uintptr_t page_address = (raw_address / page_size) * page_size;
-  const size_t new_length = length + (size_t) (raw_address - page_address);
   assert (page_address <= raw_address);
+
+  /* Computes the new length */
+  const size_t new_length = length + (size_t) (raw_address - page_address);
 
   if (new_length <= MERGE_THRESHOLD)
     return;
