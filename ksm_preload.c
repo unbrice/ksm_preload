@@ -51,7 +51,9 @@
 
 /******** GLOBAL STATE ********/
 
-/* Just a little spoon of syntactic sugar to help the medicine go down */
+/* Aliases for function types.
+ * Just a little spoon of syntactic sugar to help the medicine go down
+ */
 typedef void *calloc_function (size_t nmemb, size_t size);
 typedef void *malloc_function (size_t size);
 typedef void *mmap_function (void *start, size_t length, int prot, int flags,
@@ -95,7 +97,7 @@ kernel_mmap2 (void *start, size_t length, int prot, int flags,
   /* If MMAP2_ENABLED is not defined, we won't export mmap2, so this
    * function should not be called.
    */
-  error (1, 0, "ksm_preload: WTF O_o? mmap2 was called but not"
+  error (1, 0, "ksm_preload: Fatal error: mmap2 was called but not"
 	 " exported. Please contact unbrice@vleu.net .");
   return NULL;
 #endif
@@ -156,7 +158,10 @@ setup ()
 {
   page_size = (long unsigned) sysconf (_SC_PAGESIZE);
 
-  /* Loads the symbols from the next library using the libc functions */
+  /* Loads the symbols from the next library using the libc functions
+   * We will set them at once to avoid a situation where we would be
+   * using some of them, and some of the default ones
+   */
   calloc_function *dl_calloc = xdlsym (RTLD_NEXT, "calloc");
   malloc_function *dl_malloc = xdlsym (RTLD_NEXT, "malloc");
   mmap_function *dl_mmap = xdlsym (RTLD_NEXT, "mmap");
@@ -256,7 +261,7 @@ merge_if_profitable (void *address, size_t length, int flags)
     return;
   /* Checks that required flags are present and that forbidden ones are not */
   else if (flags == -1		// flags are unknown
-	   // Check for required flags, do not try merging the stacks
+	   // Checks for required flags, avoids the stacks
 	   || ((flags & MAP_PRIVATE) && (flags & MAP_ANONYMOUS)
 	       && !(flags & MAP_GROWSDOWN) && !(flags & MAP_STACK)))
     {
@@ -303,7 +308,7 @@ mmap (void *addr, size_t length, int prot, int flags, int fd, off_t offset)
 }
 
 #if ! MMAP2_ENABLED
-static
+static // Disables mmap2
 #endif
 /* Just like mmap2() but calls merge_if_profitable */
 void *
