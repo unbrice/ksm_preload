@@ -308,7 +308,7 @@ mmap (void *addr, size_t length, int prot, int flags, int fd, off_t offset)
 }
 
 #if ! MMAP2_ENABLED
-static // Disables mmap2
+static				// Disables mmap2
 #endif
 /* Just like mmap2() but calls merge_if_profitable */
 void *
