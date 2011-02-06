@@ -33,6 +33,7 @@
 #include <errno.h>
 #include <pthread.h>
 #include <stdbool.h>
+#include <stdarg.h>
 #include <stdio.h>		// fprintf(), stderr
 #include <stdint.h>		// uintptr_t
 
@@ -210,7 +211,7 @@ lazily_setup ()
   static pthread_t setup_thread;
 
   /* Quickly returns if the job was already done */
-  __sync_synchronize ();
+  __sync_synchronize ();  // updates external_* variables
   if (setup_done)
     return;
 
@@ -233,10 +234,10 @@ lazily_setup ()
 	    /* Another thread is doing the setup, wait for it */
 	    pthread_cond_wait (&condition, &condition_mutex);
 	  else
-	    /* We are the ones doing the setup ! So we are called from setup,
-	     * because it is allocating memory. Nothing to do.
-	     */
 	    {
+	      /* We are the ones doing the setup ! So we are called from setup,
+	       * because it is allocating memory. Nothing to do.
+	       */
 	    }
 	}
     }
@@ -327,7 +328,21 @@ mremap (void *old_address, size_t old_length, size_t new_length, int flags,
 	...)
 {
   lazily_setup ();
-  void *res = external_mremap (old_address, old_length, new_length, flags);
+  void *res;
+  if (flags & MREMAP_FIXED)
+    {
+      /* This is the five-arguments version of mremap. */
+      // It sometimes happens that the kernel's API is so ugly…
+      void *target_address;
+      va_list extra_args;
+      va_start (extra_args, flags);
+      target_address = va_arg (extra_args, void *);
+      va_end (extra_args);
+      res = external_mremap (old_address, old_length, new_length, flags,
+			     target_address);
+    }
+  else
+    res = external_mremap (old_address, old_length, new_length, flags);
   merge_if_profitable (res, new_length, -1);
   return res;
 }
