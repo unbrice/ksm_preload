@@ -107,12 +107,12 @@ kernel_mmap2 (void *start, size_t length, int prot, int flags,
 /* The functions that the program would be using if we weren't preloaded.
  * Temporarily set to "safe" values during initialisation
  */
-calloc_function *next_dl_calloc = __libc_calloc;
-malloc_function *next_dl_malloc = __libc_malloc;
-mmap_function *next_dl_mmap = kernel_mmap;
-mmap2_function *next_dl_mmap2 = kernel_mmap2;
-mremap_function *next_dl_mremap = NULL;
-realloc_function *next_dl_realloc = __libc_realloc;
+calloc_function *external_calloc = __libc_calloc;
+malloc_function *external_malloc = __libc_malloc;
+mmap_function *external_mmap = kernel_mmap;
+mmap2_function *external_mmap2 = kernel_mmap2;
+mremap_function *external_mremap = NULL;
+realloc_function *external_realloc = __libc_realloc;
 #else
 # error This version of ksm_preload has not been tested with your	\
   libC. Please define KSMP_FORCE_LIBC to 1 (-DKSMP_FORCE_LIBC=1) and	\
@@ -152,7 +152,7 @@ xdlsym (void *handle, const char *symbol)
     }
 }
 
-/* Sets the next_dl_* variables */
+/* Sets the external_* variables */
 static void
 setup ()
 {
@@ -176,15 +176,15 @@ setup ()
     {
       mmap2_function *dl_mmap2 = dlsym (RTLD_NEXT, "mmap2");
       if (NULL != dl_mmap2)
-	next_dl_mmap2 = dl_mmap2;
+	external_mmap2 = dl_mmap2;
     }
 
   /* Activates the symbols from the next library */
-  next_dl_calloc = dl_calloc;
-  next_dl_malloc = dl_malloc;
-  next_dl_mmap = dl_mmap;
-  next_dl_mremap = dl_mremap;
-  next_dl_realloc = dl_realloc;
+  external_calloc = dl_calloc;
+  external_malloc = dl_malloc;
+  external_mmap = dl_mmap;
+  external_mremap = dl_mremap;
+  external_realloc = dl_realloc;
 
   debug_puts ("Setup done.");
 }
@@ -282,7 +282,7 @@ void *
 calloc (size_t nmemb, size_t size)
 {
   lazily_setup ();
-  void *res = next_dl_calloc (nmemb, size);
+  void *res = external_calloc (nmemb, size);
   merge_if_profitable (res, size, -1);
   return res;
 }
@@ -292,7 +292,7 @@ void *
 malloc (size_t size)
 {
   lazily_setup ();
-  void *res = next_dl_malloc (size);
+  void *res = external_malloc (size);
   merge_if_profitable (res, size, -1);
   return res;
 }
@@ -302,7 +302,7 @@ void *
 mmap (void *addr, size_t length, int prot, int flags, int fd, off_t offset)
 {
   lazily_setup ();
-  void *res = next_dl_mmap (addr, length, prot, flags, fd, offset);
+  void *res = external_mmap (addr, length, prot, flags, fd, offset);
   merge_if_profitable (res, length, flags);
   return res;
 }
@@ -316,7 +316,7 @@ mmap2 (void *addr, size_t length, int prot, int flags, int fd, off_t pgoffset)
 {
   assert (MMAP2_ENABLED);
   lazily_setup ();
-  void *res = next_dl_mmap2 (addr, length, prot, flags, fd, pgoffset);
+  void *res = external_mmap2 (addr, length, prot, flags, fd, pgoffset);
   merge_if_profitable (res, length, flags);
   return res;
 }
@@ -327,7 +327,7 @@ mremap (void *old_address, size_t old_length, size_t new_length, int flags,
 	...)
 {
   lazily_setup ();
-  void *res = next_dl_mremap (old_address, old_length, new_length, flags);
+  void *res = external_mremap (old_address, old_length, new_length, flags);
   merge_if_profitable (res, new_length, -1);
   return res;
 }
@@ -337,7 +337,7 @@ void *
 realloc (void *addr, size_t size)
 {
   lazily_setup ();
-  void *res = next_dl_realloc (addr, size);
+  void *res = external_realloc (addr, size);
   merge_if_profitable (res, size, -1);
   return res;
 }
