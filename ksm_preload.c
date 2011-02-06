@@ -250,6 +250,7 @@ lazily_setup ()
 static void
 merge_if_profitable (void *address, size_t length, int flags)
 {
+
   /* Rounds address to its page */
   const uintptr_t raw_address = (uintptr_t) address;
   const uintptr_t page_address = (raw_address / page_size) * page_size;
@@ -258,7 +259,7 @@ merge_if_profitable (void *address, size_t length, int flags)
   /* Computes the new length */
   const size_t new_length = length + (size_t) (raw_address - page_address);
 
-  if (new_length <= MERGE_THRESHOLD)
+  if (new_length <= MERGE_THRESHOLD || NULL == address)
     return;
   /* Checks that required flags are present and that forbidden ones are not */
   else if (flags == -1		// flags are unknown
