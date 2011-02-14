@@ -267,7 +267,7 @@ merge_if_profitable (void *address, size_t length, int flags)
 	   || ((flags & MAP_PRIVATE) && (flags & MAP_ANONYMOUS)
 	       && !(flags & MAP_GROWSDOWN) && !(flags & MAP_STACK)))
     {
-      if (-1 == madvise ((void *) page_address, new_length, MADV_MERGEABLE))
+      if (0 != madvise ((void *) page_address, new_length, MADV_MERGEABLE))
 	debug_puts ("madvise() failed");
       else
 	debug_puts ("Sharing");
