@@ -135,7 +135,7 @@ debug_puts (const char *str)
 #ifdef DEBUG
   fprintf (stderr, "ksm_preload: %s\n", str);
 #else
-  str = str;			// disables a warning about unused str
+  (void) str;			// disables a warning about unused str
 #endif
 }
 
