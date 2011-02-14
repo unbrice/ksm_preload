@@ -31,13 +31,17 @@
 #include <assert.h>
 #include <error.h>
 #include <errno.h>
+#include <limits.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdarg.h>
 #include <stdio.h>		// fprintf(), stderr
 #include <stdint.h>		// uintptr_t
+#include <stdlib.h>
 
-#define MERGE_THRESHOLD (4086*8)
+/* The default value for merge_threshold */
+#define DEFAULT_MERGE_THRESHOLD (4086*8);
+static const char *const MERGE_THRESHOLD_ENV_NAME = "KSMP_MERGE_THRESHOLD";
 
 /* mmap2 is only defined on some 32 bit systems
  * (actually, it might only be defined i386)
@@ -124,11 +128,15 @@ realloc_function *external_realloc = __libc_realloc;
  * by setup()
  */
 static unsigned long page_size = 4096;
+
+/* Zones smaller than this won't be merged */
+static int merge_threshold = DEFAULT_MERGE_THRESHOLD;
 
 
 
 /******** SETUP ********/
 
+/* puts()-like, only enabled in DEBUG mode  */
 static void
 debug_puts (const char *str)
 {
@@ -137,6 +145,56 @@ debug_puts (const char *str)
 #else
   (void) str;			// disables a warning about unused str
 #endif
+}
+
+/* printf()-like, only enabled in DEBUG mode  */
+static void
+debug_printf (const char *fmt, ...)
+{
+#ifdef DEBUG
+  char *strp;
+  va_list var_args;
+  va_start (var_args, fmt);
+  if (vasprintf (&strp, fmt, var_args) > 0)
+    debug_puts (strp);
+  else
+    debug_puts ("debug_printf failed");
+  va_end (var_args);
+#else
+  (void) fmt;			// disables a warning about unused fmt
+#endif
+}
+
+/* Gets an environment variable from its name and parses it as a
+ * positive integer.
+ * Returns the parsed value truncated to INT_MAX, -1 if undefined or invalid.
+ */
+static int
+get_uint_from_environment (const char *var_name)
+{
+  char *var_string = getenv (var_name);
+  char *var_string_end = var_string;
+  long int var_value;		// var_string as a long itn
+
+  if (NULL == var_string)
+    return -1;
+  else
+    var_value = strtol (var_string, &var_string_end, 10);
+
+  /* Validates strtol's return value */
+  if (*var_string_end != '\0' || var_value < 0)
+    {
+      debug_printf ("Invalid environment variable %s=%s, a"
+		    " positive integer was expected.");
+      return -1;
+    }
+  else if (var_value > INT_MAX)
+    {
+      debug_printf ("Truncated %s to INT_MAX(%i) ", var_name, INT_MAX);
+      return INT_MAX;
+    }
+  else
+    return var_value;
 }
 
 /* Just like dlsym but error()s in case of failure */
@@ -157,8 +215,6 @@ xdlsym (void *handle, const char *symbol)
 static void
 setup ()
 {
-  page_size = (long unsigned) sysconf (_SC_PAGESIZE);
-
   /* Loads the symbols from the next library using the libc functions
    * We will set them at once to avoid a situation where we would be
    * using some of them, and some of the default ones
@@ -179,6 +235,12 @@ setup ()
       if (NULL != dl_mmap2)
 	external_mmap2 = dl_mmap2;
     }
+
+  /* Get parameters from the environment */
+  page_size = (long unsigned) sysconf (_SC_PAGESIZE);
+  merge_threshold = get_uint_from_environment (MERGE_THRESHOLD_ENV_NAME);
+  if (merge_threshold == -1)
+    merge_threshold = DEFAULT_MERGE_THRESHOLD;
 
   /* Activates the symbols from the next library */
   external_calloc = dl_calloc;
@@ -211,7 +273,7 @@ lazily_setup ()
   static pthread_t setup_thread;
 
   /* Quickly returns if the job was already done */
-  __sync_synchronize ();  // updates external_* variables
+  __sync_synchronize ();	// updates external_* variables
   if (setup_done)
     return;
 
@@ -246,6 +308,7 @@ lazily_setup ()
 }
 
 /* Issues a madvise(..., MADV_MERGEABLE) if len is big enough and flags are rights.
+ * Flags are ignores if flags == -1
  */
 static void
 merge_if_profitable (void *address, size_t length, int flags)
@@ -259,7 +322,7 @@ merge_if_profitable (void *address, size_t length, int flags)
   /* Computes the new length */
   const size_t new_length = length + (size_t) (raw_address - page_address);
 
-  if (new_length <= MERGE_THRESHOLD || NULL == address)
+  if (new_length <= merge_threshold || NULL == address)
     return;
   /* Checks that required flags are present and that forbidden ones are not */
   else if (flags == -1		// flags are unknown
