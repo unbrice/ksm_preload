@@ -271,19 +271,10 @@ setup ()
 static void
 lazily_setup ()
 {
-  /* Allows to be notified when setup has returned */
-  static pthread_cond_t condition = PTHREAD_COND_INITIALIZER;
-  /* Protects the other variables */
-  static pthread_mutex_t condition_mutex =
-    PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP;
+  /* Allows to be sure that only one threads is calling setup() */
+  static pthread_mutex_t mutex = PTHREAD_ERRORCHECK_MUTEX_INITIALIZER_NP;
   /* True if setup() has been called and returned */
   static bool setup_done = false;
-  /* True if setup() was called or is being called */
-  static bool setup_started = false;
-  /* The thread in charge for running setup(), invalid if
-   * setup_started is false
-   */
-  static pthread_t setup_thread;
 
   /* Quickly returns if the job was already done */
   __sync_synchronize ();	// updates globals.* variables
@@ -291,33 +282,17 @@ lazily_setup ()
     return;
 
   // <condition_mutex>
-  pthread_mutex_lock (&condition_mutex);
+  if (pthread_mutex_lock (&mutex) == EDEADLK)
+    return; // Recursive call
+
   if (!setup_done)		// Might have been called since last check
     {
-      if (!setup_started)
-	{
-	  /* Setup hasn't been called yet, start it */
-	  setup_thread = pthread_self ();
-	  setup_started = true;
-	  setup ();
-	  setup_done = true;
-	  pthread_cond_broadcast (&condition);
-	}
-      else			/* if (setup_started) */
-	{
-	  if (pthread_self () != setup_thread)
-	    /* Another thread is doing the setup, wait for it */
-	    pthread_cond_wait (&condition, &condition_mutex);
-	  else
-	    {
-	      /* We are the ones doing the setup ! So we are called from setup,
-	       * because it is allocating memory. Nothing to do.
-	       */
-	    }
-	}
+      setup ();
+      setup_done = true;
     }
+
   // </condition_mutex>
-  pthread_mutex_unlock (&condition_mutex);
+  pthread_mutex_unlock (&mutex);
 }
 
 /* Issues a madvise(..., MADV_MERGEABLE) if len is big enough and flags are rights.
