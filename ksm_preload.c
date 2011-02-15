@@ -40,7 +40,7 @@
 #include <stdlib.h>
 
 /* The default value for merge_threshold */
-#define DEFAULT_MERGE_THRESHOLD (4086*8);
+#define DEFAULT_MERGE_THRESHOLD (4086*8)
 static const char *const MERGE_THRESHOLD_ENV_NAME = "KSMP_MERGE_THRESHOLD";
 
 /* mmap2 is only defined on some 32 bit systems
@@ -108,29 +108,41 @@ kernel_mmap2 (void *start, size_t length, int prot, int flags,
 #endif
 }
 
+/* This structure contains all global variables. */
+static struct
+{
+  /* The functions that the program would be using if we weren't preloaded.
+   * Temporarily set to "safe" values during initialisation
+   */
+  calloc_function *ext_calloc;
+  malloc_function *ext_malloc;
+  mmap_function *ext_mmap;
+  mmap2_function *ext_mmap2;
+  mremap_function *ext_mremap;
+  realloc_function *ext_realloc;
+  /* The page size, this value is temporary and will be fixed
+   * by setup()
+   */
+  unsigned long page_size;
+  /* Zones smaller than this won't be merged */
+  int merge_threshold;
+} globals =
+{
 #if __GLIBC_PREREQ(2,12) || KSMP_FORCE_LIBC
-/* The functions that the program would be using if we weren't preloaded.
- * Temporarily set to "safe" values during initialisation
- */
-calloc_function *external_calloc = __libc_calloc;
-malloc_function *external_malloc = __libc_malloc;
-mmap_function *external_mmap = kernel_mmap;
-mmap2_function *external_mmap2 = kernel_mmap2;
-mremap_function *external_mremap = NULL;
-realloc_function *external_realloc = __libc_realloc;
+  __libc_calloc,	// libc calloc
+  __libc_malloc,	// libc malloc
+  kernel_mmap,		// calls kernel mmap
+  kernel_mmap2,		// calls mmap2 mmap
+  NULL,			// mremap, unused during initialisation
+  __libc_realloc,	// libc realloc
 #else
 # error This version of ksm_preload has not been tested with your	\
   libC. Please define KSMP_FORCE_LIBC to 1 (-DKSMP_FORCE_LIBC=1) and	\
   tell me about the result.
 #endif
-
-/* The page size, this value is temporary and will be fixed
- * by setup()
- */
-static unsigned long page_size = 4096;
-
-/* Zones smaller than this won't be merged */
-static int merge_threshold = DEFAULT_MERGE_THRESHOLD;
+  4096,				// page_size
+  DEFAULT_MERGE_THRESHOLD	//merge_threshold
+};
 
 
 
@@ -211,7 +223,7 @@ xdlsym (void *handle, const char *symbol)
     }
 }
 
-/* Sets the external_* variables */
+/* Sets the globals.* variables */
 static void
 setup ()
 {
@@ -233,21 +245,22 @@ setup ()
     {
       mmap2_function *dl_mmap2 = dlsym (RTLD_NEXT, "mmap2");
       if (NULL != dl_mmap2)
-	external_mmap2 = dl_mmap2;
+	globals.ext_mmap2 = dl_mmap2;
     }
 
   /* Get parameters from the environment */
-  page_size = (long unsigned) sysconf (_SC_PAGESIZE);
-  merge_threshold = get_uint_from_environment (MERGE_THRESHOLD_ENV_NAME);
-  if (merge_threshold == -1)
-    merge_threshold = DEFAULT_MERGE_THRESHOLD;
+  globals.page_size = (long unsigned) sysconf (_SC_PAGESIZE);
+  globals.merge_threshold =
+    get_uint_from_environment (MERGE_THRESHOLD_ENV_NAME);
+  if (globals.merge_threshold == -1)
+    globals.merge_threshold = DEFAULT_MERGE_THRESHOLD;
 
   /* Activates the symbols from the next library */
-  external_calloc = dl_calloc;
-  external_malloc = dl_malloc;
-  external_mmap = dl_mmap;
-  external_mremap = dl_mremap;
-  external_realloc = dl_realloc;
+  globals.ext_calloc = dl_calloc;
+  globals.ext_malloc = dl_malloc;
+  globals.ext_mmap = dl_mmap;
+  globals.ext_mremap = dl_mremap;
+  globals.ext_realloc = dl_realloc;
 
   debug_puts ("Setup done.");
 }
@@ -273,7 +286,7 @@ lazily_setup ()
   static pthread_t setup_thread;
 
   /* Quickly returns if the job was already done */
-  __sync_synchronize ();	// updates external_* variables
+  __sync_synchronize ();	// updates globals.* variables
   if (setup_done)
     return;
 
@@ -316,13 +329,14 @@ merge_if_profitable (void *address, size_t length, int flags)
 
   /* Rounds address to its page */
   const uintptr_t raw_address = (uintptr_t) address;
-  const uintptr_t page_address = (raw_address / page_size) * page_size;
+  const uintptr_t page_address =
+    (raw_address / globals.page_size) * globals.page_size;
   assert (page_address <= raw_address);
 
   /* Computes the new length */
   const size_t new_length = length + (size_t) (raw_address - page_address);
 
-  if (new_length <= merge_threshold || NULL == address)
+  if (new_length <= globals.merge_threshold || NULL == address)
     return;
   /* Checks that required flags are present and that forbidden ones are not */
   else if (flags == -1		// flags are unknown
@@ -347,7 +361,7 @@ void *
 calloc (size_t nmemb, size_t size)
 {
   lazily_setup ();
-  void *res = external_calloc (nmemb, size);
+  void *res = globals.ext_calloc (nmemb, size);
   merge_if_profitable (res, size, -1);
   return res;
 }
@@ -357,7 +371,7 @@ void *
 malloc (size_t size)
 {
   lazily_setup ();
-  void *res = external_malloc (size);
+  void *res = globals.ext_malloc (size);
   merge_if_profitable (res, size, -1);
   return res;
 }
@@ -367,7 +381,7 @@ void *
 mmap (void *addr, size_t length, int prot, int flags, int fd, off_t offset)
 {
   lazily_setup ();
-  void *res = external_mmap (addr, length, prot, flags, fd, offset);
+  void *res = globals.ext_mmap (addr, length, prot, flags, fd, offset);
   merge_if_profitable (res, length, flags);
   return res;
 }
@@ -381,7 +395,7 @@ mmap2 (void *addr, size_t length, int prot, int flags, int fd, off_t pgoffset)
 {
   assert (MMAP2_ENABLED);
   lazily_setup ();
-  void *res = external_mmap2 (addr, length, prot, flags, fd, pgoffset);
+  void *res = globals.ext_mmap2 (addr, length, prot, flags, fd, pgoffset);
   merge_if_profitable (res, length, flags);
   return res;
 }
@@ -402,11 +416,11 @@ mremap (void *old_address, size_t old_length, size_t new_length, int flags,
       va_start (extra_args, flags);
       target_address = va_arg (extra_args, void *);
       va_end (extra_args);
-      res = external_mremap (old_address, old_length, new_length, flags,
-			     target_address);
+      res = globals.ext_mremap (old_address, old_length, new_length, flags,
+				target_address);
     }
   else
-    res = external_mremap (old_address, old_length, new_length, flags);
+    res = globals.ext_mremap (old_address, old_length, new_length, flags);
   merge_if_profitable (res, new_length, -1);
   return res;
 }
@@ -416,7 +430,7 @@ void *
 realloc (void *addr, size_t size)
 {
   lazily_setup ();
-  void *res = external_realloc (addr, size);
+  void *res = globals.ext_realloc (addr, size);
   merge_if_profitable (res, size, -1);
   return res;
 }
