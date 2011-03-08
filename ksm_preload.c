@@ -177,6 +177,14 @@ debug_printf (const char *fmt, ...)
 #endif
 }
 
+#if __GNUC_PREREQ(4,0)
+// marks debug_printf as a printf-like function in order to get warnings
+// if it is used incorectly
+static void
+debug_printf (const char *fmt, ...)
+__attribute__ ((format (gnu_printf, 1, 2)));
+#endif
+
 /* Gets an environment variable from its name and parses it as a
  * positive integer.
  * Returns the parsed value truncated to INT_MAX, -1 if undefined or invalid.
@@ -197,7 +205,7 @@ get_uint_from_environment (const char *var_name)
   if (*var_string_end != '\0' || var_value < 0)
     {
       debug_printf ("Invalid environment variable %s=%s, a"
-		    " positive integer was expected.");
+		    " positive integer was expected.", var_name, var_string);
       return -1;
     }
   else if (var_value > INT_MAX)
@@ -206,7 +214,7 @@ get_uint_from_environment (const char *var_name)
       return INT_MAX;
     }
   else
-    return var_value;
+    return (int) var_value;
 }
 
 /* Just like dlsym but error()s in case of failure */
@@ -283,7 +291,7 @@ lazily_setup ()
 
   // <condition_mutex>
   if (pthread_mutex_lock (&mutex) == EDEADLK)
-    return; // Recursive call
+    return;			// Recursive call
 
   if (!setup_done)		// Might have been called since last check
     {
