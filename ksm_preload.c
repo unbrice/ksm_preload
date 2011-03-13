@@ -81,32 +81,35 @@ kernel_mmap (void *start, size_t length, int prot, int flags,
 	     int fd, off_t offset)
 {
 #ifdef __i386__
-  int32_t args[6] =
-    { (int32_t) start, (int32_t) length, prot, flags, fd, offset };
+  uint32_t args[6] =
+    { (uint32_t) start, (uint32_t) length, prot, flags, fd, offset };
   return (void *) syscall (SYS_mmap, args);
 #else
   return (void *) syscall (SYS_mmap, start, length, prot, flags, fd, offset);
 #endif
 }
 
+#if MMAP2_ENABLED
 /* Directly calls the mmap2() syscall */
 static void *
 kernel_mmap2 (void *start, size_t length, int prot, int flags,
 	      int fd, off_t pgoffset)
 {
   assert (MMAP2_ENABLED);
-#if MMAP2_ENABLED
   return (void *) syscall (SYS_mmap2, start, length, prot, flags, fd,
 			   pgoffset);
+}
 #else
-  /* If MMAP2_ENABLED is not defined, we won't export mmap2, so this
-   * function should not be called.
-   */
+/* If MMAP2_ENABLED is not defined, we won't export mmap2, so this
+ * function should not be called. If it is called, it error()s.
+ */
+static void *
+kernel_mmap2 () {
   error (1, 0, "ksm_preload: Fatal error: mmap2 was called but not"
 	 " exported. Please contact unbrice@vleu.net .");
   return NULL;
-#endif
 }
+#endif
 
 /* This structure contains all global variables. */
 static struct
@@ -129,10 +132,10 @@ static struct
 } globals =
 {
 #if __GLIBC_PREREQ(2,12) || KSMP_FORCE_LIBC
-  __libc_calloc,	// libc calloc
-  __libc_malloc,	// libc malloc
-  kernel_mmap,		// calls kernel mmap
-  kernel_mmap2,		// calls mmap2 mmap
+  __libc_calloc,	// libc's calloc
+  __libc_malloc,	// libc's malloc
+  kernel_mmap,		// calls kernel's mmap
+  kernel_mmap2,		// calls kernel's mmap2, fails if undefined
   NULL,			// mremap, unused during initialisation
   __libc_realloc,	// libc realloc
 #else
@@ -370,8 +373,12 @@ mmap (void *addr, size_t length, int prot, int flags, int fd, off_t offset)
 }
 
 #if ! MMAP2_ENABLED
-static				// Disables mmap2
+/* Hides mmap2 */
+static void *
+mmap2 (void *addr, size_t length, int prot, int flags, int fd, off_t pgoffset)
+  __attribute__((unused));
 #endif
+
 /* Just like mmap2() but calls merge_if_profitable */
 void *
 mmap2 (void *addr, size_t length, int prot, int flags, int fd, off_t pgoffset)
