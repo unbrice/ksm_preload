@@ -51,6 +51,12 @@ static const char *const MERGE_THRESHOLD_ENV_NAME = "KSMP_MERGE_THRESHOLD";
 #else
 # define MMAP2_ENABLED 0
 #endif
+
+#ifdef GCC
+# define likely(x)	__builtin_expect((x),1)
+#else
+# define likely(x)	(x)
+#endif
 
 
 
@@ -180,12 +186,14 @@ debug_printf (const char *fmt, ...)
 #endif
 }
 
-#if __GNUC_PREREQ(4,0)
+#ifdef GCC
+# if __GNUC_PREREQ(4,0)
 // marks debug_printf as a printf-like function in order to get warnings
 // if it is used incorectly
 static void
 debug_printf (const char *fmt, ...)
 __attribute__ ((format (gnu_printf, 1, 2)));
+# endif
 #endif
 
 /* Gets an environment variable from its name and parses it as a
@@ -282,17 +290,17 @@ setup ()
 static void
 lazily_setup ()
 {
-  /* Allows to be sure that only one threads is calling setup() */
+  /* Allows to be sure that only one thread is calling setup() */
   static pthread_mutex_t mutex = PTHREAD_ERRORCHECK_MUTEX_INITIALIZER_NP;
   /* True if setup() has been called and returned */
   static bool setup_done = false;
 
   /* Quickly returns if the job was already done */
   __sync_synchronize ();	// updates globals.* variables
-  if (setup_done)
+  if (likely(setup_done))
     return;
 
-  // <condition_mutex>
+  // <mutex>
   if (pthread_mutex_lock (&mutex) == EDEADLK)
     return;			// Recursive call
 
@@ -302,7 +310,7 @@ lazily_setup ()
       setup_done = true;
     }
 
-  // </condition_mutex>
+  // </mutex>
   pthread_mutex_unlock (&mutex);
 }
 
