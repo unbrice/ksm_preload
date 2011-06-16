@@ -137,7 +137,7 @@ static struct
   int merge_threshold;
 } globals =
 {
-#if __GLIBC_PREREQ(2,12) || KSMP_FORCE_LIBC
+#if __GLIBC_PREREQ(2,11) || KSMP_FORCE_LIBC
   __libc_calloc,	// libc's calloc
   __libc_malloc,	// libc's malloc
   kernel_mmap,		// calls kernel's mmap
