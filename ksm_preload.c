@@ -22,11 +22,11 @@
  */
 
 
-#define _GNU_SOURCE		// dlsym(), mremap()
-#include <dlfcn.h>		// dlsym()
-#include <sys/mman.h>		// mmap(), mmap2(), mremap()
-#include <unistd.h>		// syscall()
-#include <sys/syscall.h>	// SYS_mmap, SYS_mmap2
+#define _GNU_SOURCE             // dlsym(), mremap()
+#include <dlfcn.h>              // dlsym()
+#include <sys/mman.h>           // mmap(), mmap2(), mremap()
+#include <unistd.h>             // syscall()
+#include <sys/syscall.h>        // SYS_mmap, SYS_mmap2
 
 #include <assert.h>
 #include <error.h>
@@ -35,12 +35,11 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdarg.h>
-#include <stdio.h>		// fprintf(), stderr
-#include <stdint.h>		// uintptr_t
+#include <stdio.h>              // fprintf(), stderr
+#include <stdint.h>             // uintptr_t
 #include <stdlib.h>
 
 /* The default value for merge_threshold */
-#define DEFAULT_MERGE_THRESHOLD (4086*8)
 static const char *const MERGE_THRESHOLD_ENV_NAME = "KSMP_MERGE_THRESHOLD";
 
 /* mmap2 is only defined on some 32 bit systems
@@ -53,9 +52,9 @@ static const char *const MERGE_THRESHOLD_ENV_NAME = "KSMP_MERGE_THRESHOLD";
 #endif
 
 #ifdef GCC
-# define likely(x)	__builtin_expect((x),1)
+# define likely(x)      __builtin_expect((x),1)
 #else
-# define likely(x)	(x)
+# define likely(x)      (x)
 #endif
 
 
@@ -68,11 +67,11 @@ static const char *const MERGE_THRESHOLD_ENV_NAME = "KSMP_MERGE_THRESHOLD";
 typedef void *calloc_function (size_t nmemb, size_t size);
 typedef void *malloc_function (size_t size);
 typedef void *mmap_function (void *start, size_t length, int prot, int flags,
-			     int fd, off_t offset);
+                             int fd, off_t offset);
 typedef void *mmap2_function (void *start, size_t length, int prot, int flags,
-			      int fd, off_t pgoffset);
+                              int fd, off_t pgoffset);
 typedef void *mremap_function (void *old_address, size_t old_length,
-			       size_t new_length, int flags, ...);
+                               size_t new_length, int flags, ...);
 typedef void *realloc_function (void *addr, size_t size);
 
 /* Declares the libc version of the functions we hook */
@@ -84,7 +83,7 @@ extern void __libc_free (void *ptr);
 /* Directly calls the mmap() syscall */
 static void *
 kernel_mmap (void *start, size_t length, int prot, int flags,
-	     int fd, off_t offset)
+             int fd, off_t offset)
 {
 #ifdef __i386__
   uint32_t args[6] =
@@ -99,20 +98,21 @@ kernel_mmap (void *start, size_t length, int prot, int flags,
 /* Directly calls the mmap2() syscall */
 static void *
 kernel_mmap2 (void *start, size_t length, int prot, int flags,
-	      int fd, off_t pgoffset)
+              int fd, off_t pgoffset)
 {
   assert (MMAP2_ENABLED);
   return (void *) syscall (SYS_mmap2, start, length, prot, flags, fd,
-			   pgoffset);
+                           pgoffset);
 }
 #else
 /* If MMAP2_ENABLED is not defined, we won't export mmap2, so this
  * function should not be called. If it is called, it error()s.
  */
 static void *
-kernel_mmap2 () {
+kernel_mmap2 ()
+{
   error (1, 0, "ksm_preload: Fatal error: mmap2 was called but not"
-	 " exported. Please contact unbrice@vleu.net .");
+         " exported. Please contact unbrice@vleu.net .");
   return NULL;
 }
 #endif
@@ -138,19 +138,19 @@ static struct
 } globals =
 {
 #if __GLIBC_PREREQ(2,11) || KSMP_FORCE_LIBC
-  __libc_calloc,	// libc's calloc
-  __libc_malloc,	// libc's malloc
-  kernel_mmap,		// calls kernel's mmap
-  kernel_mmap2,		// calls kernel's mmap2, fails if undefined
-  NULL,			// mremap, unused during initialisation
-  __libc_realloc,	// libc realloc
+  __libc_calloc,                // libc's calloc
+  __libc_malloc,		// libc's malloc
+  kernel_mmap,			// calls kernel's mmap
+  kernel_mmap2,			// calls kernel's mmap2, fails if undefined
+  NULL,				// mremap, unused during initialisation
+  __libc_realloc,		// libc realloc
 #else
-# error This version of ksm_preload has not been tested with your	\
+#error This version of ksm_preload has not been tested with your	\
   libC. Please define KSMP_FORCE_LIBC to 1 (-DKSMP_FORCE_LIBC=1) and	\
   tell me about the result.
 #endif
   4096,				// page_size
-  DEFAULT_MERGE_THRESHOLD	//merge_threshold
+    4096 * 8			// merge threshold
 };
 
 
@@ -187,13 +187,13 @@ debug_printf (const char *fmt, ...)
 }
 
 #ifdef GCC
-# if __GNUC_PREREQ(4,0)
+#if __GNUC_PREREQ(4,0)
 // marks debug_printf as a printf-like function in order to get warnings
 // if it is used incorectly
 static void
 debug_printf (const char *fmt, ...)
 __attribute__ ((format (gnu_printf, 1, 2)));
-# endif
+#endif
 #endif
 
 /* Gets an environment variable from its name and parses it as a
@@ -201,7 +201,7 @@ __attribute__ ((format (gnu_printf, 1, 2)));
  * Returns the parsed value truncated to INT_MAX, -1 if undefined or invalid.
  */
 static int
-get_uint_from_environment (const char *var_name)
+get_int_from_environment (const char *var_name)
 {
   char *var_string = getenv (var_name);
   char *var_string_end = var_string;
@@ -246,6 +246,7 @@ xdlsym (void *handle, const char *symbol)
 static void
 setup ()
 {
+  int env_merge_treshold;
   /* Loads the symbols from the next library using the libc functions
    * We will set them at once to avoid a situation where we would be
    * using some of them, and some of the default ones
@@ -269,10 +270,9 @@ setup ()
 
   /* Get parameters from the environment */
   globals.page_size = (long unsigned) sysconf (_SC_PAGESIZE);
-  globals.merge_threshold =
-    get_uint_from_environment (MERGE_THRESHOLD_ENV_NAME);
-  if (globals.merge_threshold == -1)
-    globals.merge_threshold = DEFAULT_MERGE_THRESHOLD;
+  env_merge_treshold = get_int_from_environment (MERGE_THRESHOLD_ENV_NAME);
+  if (env_merge_treshold >= 0)
+    globals.merge_threshold = env_merge_treshold;
 
   /* Activates the symbols from the next library */
   globals.ext_calloc = dl_calloc;
@@ -297,7 +297,7 @@ lazily_setup ()
 
   /* Quickly returns if the job was already done */
   __sync_synchronize ();	// updates globals.* variables
-  if (likely(setup_done))
+  if (likely (setup_done))
     return;
 
   // <mutex>
@@ -382,9 +382,8 @@ mmap (void *addr, size_t length, int prot, int flags, int fd, off_t offset)
 
 #if ! MMAP2_ENABLED
 /* Hides mmap2 */
-static void *
-mmap2 (void *addr, size_t length, int prot, int flags, int fd, off_t pgoffset)
-  __attribute__((unused));
+static void *mmap2 (void *addr, size_t length, int prot, int flags, int fd,
+		    off_t pgoffset) __attribute__ ((unused));
 #endif
 
 /* Just like mmap2() but calls merge_if_profitable */
