@@ -19,7 +19,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 readonly KSM_PATH=$(cd $(dirname $0) ; pwd)
-readonly KSM_SO="${KSM_PATH}/ksm-preload.so"
+readonly KSM_SO="${KSM_PATH}/libksm_preload.so"
 
 if [ ! -x "${KSM_SO}" ]; then
     echo "Could not find ${KSM_SO}. Have you compiled it with 'make' ?"
