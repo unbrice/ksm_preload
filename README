@@ -12,3 +12,11 @@ memory usage.
 = More =
 
 More information, howto, on : http://vleu.net/ksm_preload/ .
+
+
+= Installing =
+
+The quick and dirty way:
+$ cmake .
+$ make
+$ sudo make install

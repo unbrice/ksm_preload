@@ -19,10 +19,16 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 readonly KSM_PATH=$(cd $(dirname $0) ; pwd)
-readonly KSM_SO="${KSM_PATH}/libksm_preload.so"
+readonly KSM_SO_GIT="${KSM_PATH}/libksm_preload.so"
+readonly KSM_SO_CMAKE="${KSM_PATH}/../share/ksm_preload/libksm_preload.so"
 
-if [ ! -x "${KSM_SO}" ]; then
-    echo "Could not find ${KSM_SO}. Have you compiled it with 'make' ?"
+if  [[ -x "${KSM_SO_GIT}" ]]; then
+    readonly KSM_SO="${KSM_SO_GIT}"
+elif [[ -x "${KSM_SO_CMAKE}" ]]; then
+    readonly KSM_SO="${KSM_SO_CMAKE}"
+else
+    echo $KSM_SO_CMAKE
+    echo "Could not find libksm_preload.so. Have you compiled it with 'make' ?"
     exit 1
 fi
 
