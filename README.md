@@ -9,12 +9,13 @@ allow you to spare memory by deduplicating it. If two pages (typically
 consecutive blocks of 4k) are identical, they will be merged to reduce
 memory usage.
 
-# More
 
-More information, howto, on [vleu.net/ksm_preload](http://vleu.net/ksm_preload/).
+# Building and installing
 
-
-# Installing
+First, please make sure you have installed the requirements:
+- Kernel headers (linux-headers under Ubuntu)
+- a build toolchain (build-essentials under Ubuntu)
+- cmake > 2.8 (earlier version may work, please tell me if so)
 
 The quick and dirty way:
 ```bash
@@ -22,3 +23,7 @@ cmake .
 make
 sudo make install
 ```
+
+# More
+
+More information, howto, on [vleu.net/ksm_preload](http://vleu.net/ksm_preload/).
