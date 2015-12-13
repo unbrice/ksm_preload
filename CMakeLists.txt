@@ -1,4 +1,6 @@
-cmake_minimum_required(VERSION 3.4)
+# TODO(unbrice): Confirm it works with earlier versions.
+# So far, it's tested with 2.8.12.2
+cmake_minimum_required(VERSION 2.8)
 
 project(KSM_PRELOAD)
 
