@@ -22,9 +22,9 @@ readonly KSM_PATH=$(cd $(dirname $0) ; pwd)
 readonly KSM_SO_GIT="${KSM_PATH}/libksm_preload.so"
 readonly KSM_SO_CMAKE="${KSM_PATH}/../share/ksm_preload/libksm_preload.so"
 
-if  [[ -x "${KSM_SO_GIT}" ]]; then
+if  [ -x "${KSM_SO_GIT}" ]; then
     readonly KSM_SO="${KSM_SO_GIT}"
-elif [[ -x "${KSM_SO_CMAKE}" ]]; then
+elif [ -s "${KSM_SO_CMAKE}" ]; then
     readonly KSM_SO="${KSM_SO_CMAKE}"
 else
     echo $KSM_SO_CMAKE
