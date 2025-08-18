@@ -32,5 +32,9 @@ else
     exit 1
 fi
 
-export LD_PRELOAD="${LD_PRELOAD} ${KSM_SO}"
+if [ -z "$LD_PRELOAD" ]; then
+  export LD_PRELOAD="$KSM_SO"
+else
+  export LD_PRELOAD="$LD_PRELOAD $KSM_SO"
+fi
 exec "$@"
