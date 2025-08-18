@@ -356,7 +356,7 @@ calloc (size_t nmemb, size_t size)
 {
   lazily_setup ();
   void *res = globals.ext_calloc (nmemb, size);
-  merge_if_profitable (res, size, -1);
+  merge_if_profitable (res, nmemb*size, -1);
   return res;
 }
 
